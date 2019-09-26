@@ -14,9 +14,6 @@
  */
 package org.pitest.classinfo;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -26,13 +23,23 @@ import org.objectweb.asm.Type;
 import org.pitest.bytecode.ASMVersion;
 import org.pitest.bytecode.NullVisitor;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Logger;
+
+import static java.lang.String.format;
+
 public final class ClassInfoVisitor extends MethodFilteringAdapter {
 
   private final ClassInfoBuilder classInfo;
+  private boolean excludeClass;
+
+  private static final Logger LOGGER = Logger.getLogger(ClassInfoVisitor.class.getName());
 
   private ClassInfoVisitor(final ClassInfoBuilder classInfo,
       final ClassVisitor writer) {
     super(writer, BridgeMethodFilter.INSTANCE);
+    LOGGER.fine(format("[PITPOC] ClassInfoVisitor(%s, %s)", classInfo, writer));
     this.classInfo = classInfo;
   }
 
@@ -81,8 +88,13 @@ public final class ClassInfoVisitor extends MethodFilteringAdapter {
   @Override
   public AnnotationVisitor visitAnnotation(final String desc,
       final boolean visible) {
+    LOGGER.info(format("[PITPOC] visitAnnotation(%s, %b)", desc, visible));
     final String type = desc.substring(1, desc.length() - 1);
-    this.classInfo.registerAnnotation(type);
+//    if (type.contains("CoverageIgnore")) {
+//      excludeClass = true;
+//    } else {
+      this.classInfo.registerAnnotation(type);
+//    }
     return new ClassAnnotationValueVisitor(this.classInfo, ClassName.fromString(type));
   }
 
@@ -91,7 +103,7 @@ public final class ClassInfoVisitor extends MethodFilteringAdapter {
       final String name, final String desc, final String signature,
       final String[] exceptions, final MethodVisitor methodVisitor) {
 
-    return new InfoMethodVisitor(this.classInfo, methodVisitor);
+    return new InfoMethodVisitor(this.classInfo, methodVisitor, excludeClass);
 
   }
 
@@ -151,25 +163,36 @@ public final class ClassInfoVisitor extends MethodFilteringAdapter {
 
 class InfoMethodVisitor extends MethodVisitor {
   private final ClassInfoBuilder classInfo;
+  private boolean excludeMethod;
+
+  private static final Logger LOGGER = Logger.getLogger(InfoMethodVisitor.class.getName());
 
   InfoMethodVisitor(final ClassInfoBuilder classInfo,
-      final MethodVisitor writer) {
+      final MethodVisitor writer, final boolean excludeMethod) {
     super(ASMVersion.ASM_VERSION, writer);
     this.classInfo = classInfo;
+    this.excludeMethod = excludeMethod;
   }
 
   @Override
   public void visitLineNumber(final int line, final Label start) {
 
-    this.classInfo.registerCodeLine(line);
+    if (!excludeMethod) {
+      this.classInfo.registerCodeLine(line);
+    }
 
   }
 
   @Override
   public AnnotationVisitor visitAnnotation(final String desc,
       final boolean visible) {
+    LOGGER.info(format("[PITPOC] visitAnnotation(%s, %b)", desc, visible));
     final String type = desc.substring(1, desc.length() - 1);
-    this.classInfo.registerAnnotation(type);
+    if (type.contains("CoverageIgnore")) {
+      excludeMethod = true;
+    } else {
+      this.classInfo.registerAnnotation(type);
+    }
     return super.visitAnnotation(desc, visible);
   }
 
